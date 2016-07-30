@@ -144,9 +144,9 @@
         var planUsage = new PlanUsage($planInfo);
         var result = planUsage.calculate();
         console.log(result);
-        $planInfo.find('.total-usage').html(result.totalUsage + 'GB');
-        $planInfo.find('.total-charge').html('$' + result.totalOverageCharge);
-        result.users.forEach(u => $('#' + u.id + ' .charge').html('$' + u.overageCharge));
+        $planInfo.find('.total-usage').html(result.totalUsage + ' GB');
+        $planInfo.find('.total-charge').html('$ ' + result.totalOverageCharge);
+        result.users.forEach(u => $('#' + u.id + ' .charge').html('$ ' + u.overageCharge));
     }
     
     $(function() {
