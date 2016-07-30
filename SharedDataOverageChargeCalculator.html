@@ -1,0 +1,222 @@
+<!doctype html>
+
+<html lang="en-US">
+<head>
+    <meta charset="utf-8" />
+
+    <title>Shared Data Overage Charge Calculator</title>
+    <meta name="description" content="Shared Data Overage Charge Calculator" />
+    <meta name="author" content="MGhostSoft" />
+    
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js" integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44=" crossorigin="anonymous"></script>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous" />
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+    
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/x-editable/1.5.0/bootstrap3-editable/css/bootstrap-editable.css" rel="stylesheet"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/x-editable/1.5.0/bootstrap3-editable/js/bootstrap-editable.min.js"></script>
+    <style>
+    body {
+        margin: 20pt;
+        font-size: 16pt;
+    }
+    
+    #plan-info input.form-control {
+        width: 60pt;
+    }
+    
+    #users input.usage {
+        width: 60pt;
+    }
+    
+    </style>
+    
+    <script>
+    
+    class User {
+        constructor($trOrId, usage) {
+            if ($trOrId) {
+                if ($trOrId instanceof $) {
+                    this.id = $trOrId.attr('id');
+                    this.usage = Number($trOrId.find('input.usage').val());
+                } else {
+                    this.id = $trOrId;
+                    this.usage = usage;
+                }
+            }
+            this.overageCharge = 0;
+        }
+        
+        clone() {
+            return new User(this.id, this.usage);
+        }
+    }
+    
+    class PlanUsage {
+        
+        constructor($planInfo) {
+            var _this = this;
+            var $users = $planInfo.find('.users');
+            
+            _this.includedData = Number($planInfo.find('input.included-data').val());
+            _this.costPerUnitOverage = Number($planInfo.find('input.cost-per-unit-overage').val());
+            _this.overageUnit = Number($planInfo.find('input.overage-unit').val());
+            _this.users = new Array();
+            $users.find('tbody tr').each(function() {
+                _this.users.push(new User($(this)));
+            });
+        }
+        
+        calculate() {
+            const totalUsage = PlanUsage._totalUsageOfUsers(this.users);
+            const totalOverageCharge = this._totalOverageChargeOfUsage(totalUsage);
+            
+            var tempUsers = this.users.map(u => u.clone());
+            tempUsers.sort((a, b) => b.usage - a.usage);
+            
+            var tempOverageCharge = totalOverageCharge;
+            var userIdWithOverageCharges = new Map(this.users.map(u => [u.id, 0]));
+            while (tempOverageCharge > 0) {
+                var usersWithMostUsage = PlanUsage._getUsersWithMostUsageFromSortedUsers(tempUsers);
+                var nextHighestUsage = usersWithMostUsage.length === this.users.length ? 0 : this.users[usersWithMostUsage.length].usage;
+                usersWithMostUsage.forEach(u => u.usage = nextHighestUsage);
+                const wouldHaveBeenCharge = this._totalOverageChargeOfUsage(PlanUsage._totalUsageOfUsers(tempUsers));
+                const liablePerPerson = (tempOverageCharge - wouldHaveBeenCharge) / usersWithMostUsage.length;
+                usersWithMostUsage.forEach(u => userIdWithOverageCharges.set(u.id, userIdWithOverageCharges.get(u.id) + liablePerPerson));
+                tempOverageCharge = wouldHaveBeenCharge;
+            }
+            
+            this.users.forEach(u => u.overageCharge = userIdWithOverageCharges.get(u.id).toFixed(2));
+            
+            return {
+                totalUsage: totalUsage.toFixed(3),
+                totalOverageCharge: totalOverageCharge.toFixed(2),
+                users: this.users
+            };
+        }
+        
+        static _totalUsageOfUsers(users) {
+            return users.map(u => u.usage).reduce((prev, cur) => prev + cur, 0);
+        }
+        
+        _totalOverageChargeOfUsage(usage) {
+            var overage = usage - this.includedData;
+            var overageUnits = Math.ceil(overage / this.overageUnit);
+            return Math.max(0, this.costPerUnitOverage * overageUnits);
+        }
+        
+        static _getUsersWithMostUsageFromSortedUsers(users) {
+            var mostUsage = users[0].usage;
+            return users.filter(u => u.usage === mostUsage);
+        }
+        
+    }
+    
+    function guidGenerator() {
+        var S4 = function() {
+           return (((1 + Math.random()) * 0x10000) | 0).toString(16).substring(1);
+        };
+        return (S4()+S4()+"-"+S4()+"-"+S4()+"-"+S4()+"-"+S4()+S4()+S4());
+    }
+    
+    function addNewUser($planInfo) {
+        $userOuter = $('#user').clone();
+        $user = $($userOuter.html());
+        $user.attr('id', guidGenerator());
+        $lineName = $user.find('.line-name');
+        $lineName.html('Line ' + (getNumOfLines($planInfo) + 1));
+        $lineName.editable();
+        
+        $planInfo.find('.users tbody').append($user);
+        
+    }
+    
+    function deleteUser($deleteButton) {
+        $deleteButton.closest('tr').remove();
+    }
+    
+    function getNumOfLines($planInfo) {
+        return $planInfo.find('.users tbody tr').length;
+    }
+    
+    function calculate() {
+        $planInfo = $('#plan-info');
+        var planUsage = new PlanUsage($planInfo);
+        var result = planUsage.calculate();
+        console.log(result);
+        $planInfo.find('.total-usage').html(result.totalUsage + 'GB');
+        $planInfo.find('.total-charge').html('$' + result.totalOverageCharge);
+        result.users.forEach(u => $('#' + u.id + ' .charge').html('$' + u.overageCharge));
+    }
+    
+    $(function() {
+        $('#add-new-user').on('click', addNewUser);
+        $('#calculate').on('click', calculate);
+        $(document).on('click', 'button.delete', function() {
+            deleteUser($(this));
+        });
+      
+        $planInfo = $('#plan-info');
+        for (var i = 0; i < 5; ++i) {
+            addNewUser($planInfo);
+        }
+    });
+    </script>
+</head>
+
+<body>
+    <form id="plan-info" class="form-inline">The shared data plan includes
+        <input type="number" class="form-control included-data" value="15" />
+        GB of data, with an overage charge of
+        <div class="input-group">
+            <span class="input-group-addon">$</span>
+            <input type="number" class="form-control cost-per-unit-overage" aria-label="Amount" value="15" />
+        </div>
+        per
+        <div class="input-group">
+            <input type="number" class="form-control overage-unit" value="1" />
+            <span class="input-group-addon">GB</span>
+        </div>
+        .
+        <table class="table users">
+            <thead>
+                <tr>
+                    <td>Line</td>
+                    <td>Usage</td>
+                    <td>Charge</td>
+                    <td></td>
+                </tr>
+            </thead>
+            <tbody>
+                
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td>Total</td>
+                    <td><span class="total-usage"></span></td>
+                    <td><span class="total-charge"></span></td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+        <div>
+            <button type="button" id="add-new-user" class="btn btn-default glyphicon glyphicon-plus"></button>
+            <button type="button" id="calculate" class="btn btn-primary">Calculate</button>
+        </div>
+    </form>
+    
+    <template id="user">
+        <tr>
+            <td><a href="#" class="editable line-name" data-type="text" data-title="Line name">Line name</a></td>
+            <td>
+                <div class="input-group">
+                    <input type="number" class="form-control usage" value="2" />
+                    <span class="input-group-addon">GB</span>
+                </div>
+            </td>
+            <td><span class="charge"></span></td>
+            <td><button type="button" id="add-new-user" class="btn btn-danger glyphicon glyphicon-remove delete"></button></td>
+        </tr>
+    </template>
+</body>
+</html>
